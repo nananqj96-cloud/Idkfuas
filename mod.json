@@ -20,7 +20,9 @@
         "Stage 2 (4 All / 4 Wave)",
         "Stage 3 (8 All / 8 Wave)",
         "Stage 4 (16 All / 8 Wave)",
-        "Stage 5 (OFF)"
+        "Stage 5 (OFF)",
+        "Stage 6 (32 All / 16 Wave)",
+        "Stage 7 (64 All / 32 Wave)"
       ]
     }
   }
