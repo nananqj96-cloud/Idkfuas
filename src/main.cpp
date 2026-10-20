@@ -1,4 +1,3 @@
-
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
@@ -128,72 +127,40 @@ public:
         m_rapidInputStreak = 0;
     }
 
-    // Reads the five-stage preset from Geode settings. This is checked on each
-    // real-player update so changing the dropdown while in a level takes effect
-    // immediately, just like the former in-level preset cycling did.
+    static bool skipShip() {
+        return !Mod::get()->getSettingValue<bool>("dont-skip-ship");
+    }
+
+    // Reads the buffer level (0 = OFF, 1-20) from Geode settings. This is checked on
+    // each real-player update so changing it while in a level takes effect immediately.
     void applyPresetFromSetting() {
-        const std::string selected = Mod::get()->getSettingValue<std::string>("buffer-stage");
+        int64_t raw = Mod::get()->getSettingValue<int64_t>("buffer-level");
+        int level = static_cast<int>(raw);
+        if (level < 0) level = 0;
+        if (level > 20) level = 20;
 
-        int selectedIndex = 0;
-        if (selected == "Stage 2 (4 All / 4 Wave)") {
-            selectedIndex = 1;
-        } else if (selected == "Stage 3 (8 All / 8 Wave)") {
-            selectedIndex = 2;
-        } else if (selected == "Stage 4 (16 All / 8 Wave)") {
-            selectedIndex = 3;
-        } else if (selected == "Stage 5 (OFF)") {
-            selectedIndex = 4;
-        } else if (selected == "Stage 6 (32 All / 16 Wave)") {
-            selectedIndex = 5;
-        } else if (selected == "Stage 7 (64 All / 32 Wave)") {
-            selectedIndex = 6;
-        }
-
-        if (selectedIndex == m_presetIndex) {
+        if (level == m_presetIndex) {
             return;
         }
 
-        m_presetIndex = selectedIndex;
+        m_presetIndex = level;
         m_waitTicks = -1;
         m_queuedOpposite = false;
 
-        switch (m_presetIndex) {
-            case 0:
-                m_enabled = true;
-                m_maxTicksNormal = 2;
-                m_maxTicksWave = 2;
-                break;
-            case 1:
-                m_enabled = true;
-                m_maxTicksNormal = 4;
-                m_maxTicksWave = 4;
-                break;
-            case 2:
-                m_enabled = true;
-                m_maxTicksNormal = 8;
-                m_maxTicksWave = 8;
-                break;
-            case 3:
-                m_enabled = true;
-                m_maxTicksNormal = 16;
-                m_maxTicksWave = 8;
-                break;
-            case 4:
-                m_enabled = false;
-                m_maxTicksNormal = 0;
-                m_maxTicksWave = 0;
-                break;
-            case 5:
-                m_enabled = true;
-                m_maxTicksNormal = 32;
-                m_maxTicksWave = 16;
-                break;
-            case 6:
-                m_enabled = true;
-                m_maxTicksNormal = 64;
-                m_maxTicksWave = 32;
-                break;
+        if (level == 0) {
+            m_enabled = false;
+            m_maxTicksNormal = 0;
+            m_maxTicksWave = 0;
+            return;
         }
+
+        // Level:  1  2  3  4   5   6   7   8   9  10  11  12  13  14  15  16  17  18  19  20
+        static const int kNormal[20] = {2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144};
+        static const int kWave[20]   = {2, 4, 8,  8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48,  52,  56,  60,  64,  68,  72};
+
+        m_enabled = true;
+        m_maxTicksNormal = kNormal[level - 1];
+        m_maxTicksWave = kWave[level - 1];
     }
 
     bool isSimulating() const { return m_simulating; }
@@ -249,8 +216,8 @@ public:
 
         float dt = getValidDt();
         int survived = 0;
-        bool isContinuousMode = realP1->m_isDart || realP1->m_isBird || realP1->m_isSwing ||
-                                (isDual && realP2 && (realP2->m_isDart || realP2->m_isBird || realP2->m_isSwing));
+        bool isContinuousMode = realP1->m_isDart || realP1->m_isBird || realP1->m_isSwing || realP1->m_isShip ||
+                                (isDual && realP2 && (realP2->m_isDart || realP2->m_isBird || realP2->m_isSwing || realP2->m_isShip));
         int airborneTicks = 0;
         int safeLandedTicks = 0;
 
@@ -343,7 +310,7 @@ public:
         }
 
         // 1. NEVER touch Ship mode (or Dual with Ship)
-        if (p1->m_isShip || (isDual && p2 && p2->m_isShip)) {
+        if (skipShip() && (p1->m_isShip || (isDual && p2 && p2->m_isShip))) {
             m_waitTicks = -1;
             m_queuedOpposite = false;
             m_gameHolding = push;
@@ -392,8 +359,8 @@ public:
         }
 
         // Only Wave (m_isDart) and Robot (m_isRobot) change trajectory on RELEASE
-        bool releaseAffectsPhysics = p1->m_isDart || p1->m_isRobot ||
-                                     (isDual && p2 && (p2->m_isDart || p2->m_isRobot));
+        bool releaseAffectsPhysics = p1->m_isDart || p1->m_isRobot || p1->m_isShip ||
+                                     (isDual && p2 && (p2->m_isDart || p2->m_isRobot || p2->m_isShip));
         if (!push && !releaseAffectsPhysics) {
             m_gameHolding = false;
             return true;
@@ -476,7 +443,7 @@ public:
             m_ticksSinceLastInput++;
         }
 
-        if (player->m_isShip || (pl->m_gameState.m_isDualMode && pl->m_player2 && pl->m_player2->m_isShip)) {
+        if (skipShip() && (player->m_isShip || (pl->m_gameState.m_isDualMode && pl->m_player2 && pl->m_player2->m_isShip))) {
             m_waitTicks = -1;
             m_queuedOpposite = false;
             if (m_gameHolding != m_physicalHolding) {
