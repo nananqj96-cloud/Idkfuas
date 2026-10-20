@@ -141,6 +141,10 @@ public:
             selectedIndex = 3;
         } else if (selected == "Stage 5 (OFF)") {
             selectedIndex = 4;
+        } else if (selected == "Stage 6 (32 All / 16 Wave)") {
+            selectedIndex = 5;
+        } else if (selected == "Stage 7 (64 All / 32 Wave)") {
+            selectedIndex = 6;
         }
 
         if (selectedIndex == m_presetIndex) {
@@ -176,6 +180,16 @@ public:
                 m_enabled = false;
                 m_maxTicksNormal = 0;
                 m_maxTicksWave = 0;
+                break;
+            case 5:
+                m_enabled = true;
+                m_maxTicksNormal = 32;
+                m_maxTicksWave = 16;
+                break;
+            case 6:
+                m_enabled = true;
+                m_maxTicksNormal = 64;
+                m_maxTicksWave = 32;
                 break;
         }
     }
