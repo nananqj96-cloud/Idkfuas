@@ -1,3 +1,4 @@
+
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
@@ -6,6 +7,7 @@
 #include <Geode/modify/GameObject.hpp>
 #include <Geode/modify/EffectGameObject.hpp>
 #include <Geode/modify/HardStreak.hpp>
+#include <Geode/ui/Notification.hpp>
 #include <string>
 
 using namespace geode::prelude;
@@ -448,6 +450,12 @@ public:
         }
 
         if (bestDelay > 0) {
+            if (Mod::get()->getSettingValue<bool>("show-saves")) {
+                Notification::create(
+                    "Buffer saved +" + std::to_string(bestDelay) + " ticks",
+                    NotificationIcon::None, 0.4f
+                )->show();
+            }
             m_bufferedPush = push;
             m_waitTicks = bestDelay;
             return false;
