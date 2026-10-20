@@ -16,19 +16,19 @@
       "type": "bool",
       "default": true
     },
-    "buffer-stage": {
-      "name": "Input Buffer Stage",
-      "description": "Select the same five buffering presets as the former F6 cycle. Changes apply during gameplay.",
-      "type": "string",
-      "default": "Stage 1 (2 All / 2 Wave)",
-      "one-of": [
-        "Stage 1 (2 All / 2 Wave)",
-        "Stage 2 (4 All / 4 Wave)",
-        "Stage 3 (8 All / 8 Wave)",
-        "Stage 4 (16 All / 8 Wave)",
-        "Stage 5 (OFF)",
-        "Stage 6 (32 All / 16 Wave)",
-        "Stage 7 (64 All / 32 Wave)"
-      ]
+    "buffer-level": {
+      "name": "Buffer Level (0 = OFF, 1-20)",
+      "description": "How far the buffer may delay an input. 1 = 2 ticks, 4 = 16/8 ticks, 20 = 144/72 ticks. High levels can lag or crash the game.",
+      "type": "int",
+      "default": 1,
+      "min": 0,
+      "max": 20
+    },
+    "dont-skip-ship": {
+      "name": "Don't Skip Ship",
+      "description": "Also apply the buffer in ship mode (normally ship is skipped). Experimental.",
+      "type": "bool",
+      "default": false
     }
   }
+}
