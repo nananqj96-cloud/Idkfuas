@@ -1,0 +1,38 @@
+name: Build Geode Mod
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            runner: windows-latest
+            target: Win64
+          - name: Android arm64
+            runner: ubuntu-latest
+            target: Android64
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build mod
+        id: build
+        uses: geode-sdk/build-geode-mod@main
+        with:
+          sdk: "5.11.2"
+          target: ${{ matrix.target }}
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: predictive-buffer-${{ matrix.target }}
+          path: ${{ steps.build.outputs.build-output }}
+          if-no-files-found: error
