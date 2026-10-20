@@ -10,6 +10,12 @@
   "developer": "lilWC",
   "description": "Trajectory-based 1-2 frame press and wave release input buffer.",
   "settings": {
+    "show-saves": {
+      "name": "Show Save Popup",
+      "description": "Shows a small popup each time the buffer delays an input to save you.",
+      "type": "bool",
+      "default": true
+    },
     "buffer-stage": {
       "name": "Input Buffer Stage",
       "description": "Select the same five buffering presets as the former F6 cycle. Changes apply during gameplay.",
@@ -26,4 +32,3 @@
       ]
     }
   }
-}
