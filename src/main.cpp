@@ -1,3 +1,4 @@
+
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
@@ -8,6 +9,7 @@
 #include <Geode/modify/HardStreak.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <string>
+#include <chrono>
 
 using namespace geode::prelude;
 
@@ -20,6 +22,11 @@ using namespace geode::prelude;
 // This keeps isolated micro-clicks and spike/sawblade dodges 100% protected!
 constexpr int SPAM_INTERVAL_TICKS = 8;
 constexpr int SPAM_STREAK_REQUIRED = 3;
+
+// Max wall-clock time (ms) a single click may spend on trajectory simulation.
+// Stops lag spikes on slow devices. If the budget runs out, the input is simply
+// passed through unbuffered. Lower = smoother game, weaker buffer on big levels.
+constexpr double SIM_BUDGET_MS = 3.0;
 
 // ============================================================================
 
@@ -51,6 +58,13 @@ private:
     // Streak-based Spam Guard state
     int  m_ticksSinceLastInput = 999;
     int  m_rapidInputStreak = 0;
+
+    // Cached settings (re-read every 30 real ticks instead of every tick)
+    bool m_skipShip = true;
+    bool m_showSaves = true;
+    int  m_settingTimer = 0;
+    int  m_popupCooldown = 0;
+    bool m_budgetHit = false;
 
     PlayerObject* createTrajectoryPlayer() {
         PlayLayer* pl = PlayLayer::get();
@@ -108,7 +122,9 @@ public:
         m_firingBuffered = false;
         m_ticksSinceLastInput = 999;
         m_rapidInputStreak = 0;
-        applyPresetFromSetting();
+        m_settingTimer = 0;
+        m_popupCooldown = 0;
+        refreshSettings();
     }
 
     void quit() {
@@ -127,8 +143,12 @@ public:
         m_rapidInputStreak = 0;
     }
 
-    static bool skipShip() {
-        return !Mod::get()->getSettingValue<bool>("dont-skip-ship");
+    bool skipShip() const { return m_skipShip; }
+
+    void refreshSettings() {
+        m_skipShip = !Mod::get()->getSettingValue<bool>("dont-skip-ship");
+        m_showSaves = Mod::get()->getSettingValue<bool>("show-saves");
+        applyPresetFromSetting();
     }
 
     // Reads the buffer level (0 = OFF, 1-20) from Geode settings. This is checked on
@@ -188,7 +208,7 @@ public:
         }
     }
 
-    int getSurvivalTicks(PlayLayer* pl, PlayerObject* realP1, PlayerObject* realP2, bool isDual, int delayFrames, bool actionPush, int maxTicks) {
+    int getSurvivalTicks(PlayLayer* pl, PlayerObject* realP1, PlayerObject* realP2, bool isDual, int delayFrames, bool actionPush, int maxTicks, std::chrono::steady_clock::time_point deadline) {
         if (!pl || !m_simPlayer1 || !realP1) return maxTicks;
 
         m_simulating = true;
@@ -222,6 +242,10 @@ public:
         int safeLandedTicks = 0;
 
         for (int i = 0; i < delayFrames + maxTicks; i++) {
+            if ((i & 7) == 0 && std::chrono::steady_clock::now() > deadline) {
+                m_budgetHit = true;
+                break;
+            }
             if (i == delayFrames) {
                 if (actionPush) {
                     m_simPlayer1->pushButton(PlayerButton::Jump);
@@ -372,8 +396,18 @@ public:
         int targetHorizon = isMiniWave ? 50 : (isWave ? 65 : 160);
         int maxDelayFrames = isWave ? m_maxTicksWave : m_maxTicksNormal;
 
+        // Time budget for all simulation done for this one click
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::microseconds(static_cast<int64_t>(SIM_BUDGET_MS * 1000.0));
+        m_budgetHit = false;
+
         // 4. Check Frame 0 (immediate input) across the full trajectory horizon
-        int ticksFrame0 = getSurvivalTicks(pl, p1, p2, isDual, 0, push, targetHorizon);
+        int ticksFrame0 = getSurvivalTicks(pl, p1, p2, isDual, 0, push, targetHorizon, deadline);
+        if (m_budgetHit) {
+            // Out of time: don't risk a wrong decision, just pass the input through
+            m_gameHolding = push;
+            return true;
+        }
         if (ticksFrame0 >= targetHorizon) {
             m_gameHolding = push;
             return true;
@@ -385,7 +419,8 @@ public:
         int bestTicks = ticksFrame0;
 
         for (int delay = 1; delay <= maxDelayFrames; delay++) {
-            int ticks = getSurvivalTicks(pl, p1, p2, isDual, delay, push, targetHorizon);
+            int ticks = getSurvivalTicks(pl, p1, p2, isDual, delay, push, targetHorizon, deadline);
+            if (m_budgetHit) break;
 
             if (isWave) {
                 // In Wave mode, delaying a turn inside a flat corridor naturally adds ~(2 * delay)
@@ -417,7 +452,8 @@ public:
         }
 
         if (bestDelay > 0) {
-            if (Mod::get()->getSettingValue<bool>("show-saves")) {
+            if (m_showSaves && m_popupCooldown <= 0) {
+                m_popupCooldown = 120;
                 Notification::create(
                     "Buffer saved +" + std::to_string(bestDelay) + " ticks",
                     NotificationIcon::None, 0.4f
@@ -436,7 +472,11 @@ public:
         PlayLayer* pl = PlayLayer::get();
         if (!pl || player != pl->m_player1) return;
 
-        applyPresetFromSetting();
+        if (++m_settingTimer >= 30) {
+            m_settingTimer = 0;
+            refreshSettings();
+        }
+        if (m_popupCooldown > 0) m_popupCooldown--;
         if (!m_enabled) return;
 
         if (m_ticksSinceLastInput < 999) {
@@ -615,7 +655,8 @@ class $modify(BufBaseGameLayer, GJBaseGameLayer) {
 
     void collisionCheckObjects(PlayerObject* player, gd::vector<GameObject*>* vec, int objectsCount, float dt) {
         if (s_sim.isSimulating()) {
-            gd::vector<GameObject*> extra;
+            static gd::vector<GameObject*> extra;
+            extra.clear();
             extra.reserve(objectsCount);
             for (int i = 0; i < objectsCount; i++) {
                 GameObject* obj = vec->at(i);
