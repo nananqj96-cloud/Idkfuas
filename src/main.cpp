@@ -1,4 +1,3 @@
-
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
@@ -9,7 +8,6 @@
 #include <Geode/modify/HardStreak.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <string>
-#include <chrono>
 
 using namespace geode::prelude;
 
@@ -53,14 +51,6 @@ private:
     // Streak-based Spam Guard state
     int  m_ticksSinceLastInput = 999;
     int  m_rapidInputStreak = 0;
-
-    // Cached settings (re-read every 30 real ticks instead of every tick)
-    bool m_skipShip = true;
-    bool m_showSaves = true;
-    int  m_settingTimer = 0;
-    int  m_popupCooldown = 0;
-    bool m_budgetHit = false;
-    int  m_simBudgetMs = 12;   // max ms one click may spend simulating (setting: sim-budget-ms)
 
     PlayerObject* createTrajectoryPlayer() {
         PlayLayer* pl = PlayLayer::get();
@@ -118,9 +108,7 @@ public:
         m_firingBuffered = false;
         m_ticksSinceLastInput = 999;
         m_rapidInputStreak = 0;
-        m_settingTimer = 0;
-        m_popupCooldown = 0;
-        refreshSettings();
+        applyPresetFromSetting();
     }
 
     void quit() {
@@ -139,16 +127,8 @@ public:
         m_rapidInputStreak = 0;
     }
 
-    bool skipShip() const { return m_skipShip; }
-
-    void refreshSettings() {
-        m_skipShip = !Mod::get()->getSettingValue<bool>("dont-skip-ship");
-        m_showSaves = Mod::get()->getSettingValue<bool>("show-saves");
-        int budget = static_cast<int>(Mod::get()->getSettingValue<int64_t>("sim-budget-ms"));
-        if (budget < 1) budget = 1;
-        if (budget > 100) budget = 100;
-        m_simBudgetMs = budget;
-        applyPresetFromSetting();
+    static bool skipShip() {
+        return !Mod::get()->getSettingValue<bool>("dont-skip-ship");
     }
 
     // Reads the buffer level (0 = OFF, 1-20) from Geode settings. This is checked on
@@ -208,7 +188,7 @@ public:
         }
     }
 
-    int getSurvivalTicks(PlayLayer* pl, PlayerObject* realP1, PlayerObject* realP2, bool isDual, int delayFrames, bool actionPush, int maxTicks, std::chrono::steady_clock::time_point deadline) {
+    int getSurvivalTicks(PlayLayer* pl, PlayerObject* realP1, PlayerObject* realP2, bool isDual, int delayFrames, bool actionPush, int maxTicks) {
         if (!pl || !m_simPlayer1 || !realP1) return maxTicks;
 
         m_simulating = true;
@@ -242,10 +222,6 @@ public:
         int safeLandedTicks = 0;
 
         for (int i = 0; i < delayFrames + maxTicks; i++) {
-            if ((i & 7) == 0 && std::chrono::steady_clock::now() > deadline) {
-                m_budgetHit = true;
-                break;
-            }
             if (i == delayFrames) {
                 if (actionPush) {
                     m_simPlayer1->pushButton(PlayerButton::Jump);
@@ -299,16 +275,6 @@ public:
 
         m_simulating = false;
         return survived;
-    }
-
-    void notifyBudgetHit() {
-        if (m_showSaves && m_popupCooldown <= 0) {
-            m_popupCooldown = 120;
-            Notification::create(
-                "Buffer out of time - raise Sim Budget",
-                NotificationIcon::None, 0.6f
-            )->show();
-        }
     }
 
     bool interceptInput(GJBaseGameLayer* layer, bool push, bool isPlayer1) {
@@ -406,19 +372,8 @@ public:
         int targetHorizon = isMiniWave ? 50 : (isWave ? 65 : 160);
         int maxDelayFrames = isWave ? m_maxTicksWave : m_maxTicksNormal;
 
-        // Time budget for all simulation done for this one click
-        const auto deadline = std::chrono::steady_clock::now() +
-            std::chrono::milliseconds(m_simBudgetMs);
-        m_budgetHit = false;
-
         // 4. Check Frame 0 (immediate input) across the full trajectory horizon
-        int ticksFrame0 = getSurvivalTicks(pl, p1, p2, isDual, 0, push, targetHorizon, deadline);
-        if (m_budgetHit) {
-            // Out of time: don't risk a wrong decision, just pass the input through
-            notifyBudgetHit();
-            m_gameHolding = push;
-            return true;
-        }
+        int ticksFrame0 = getSurvivalTicks(pl, p1, p2, isDual, 0, push, targetHorizon);
         if (ticksFrame0 >= targetHorizon) {
             m_gameHolding = push;
             return true;
@@ -430,8 +385,7 @@ public:
         int bestTicks = ticksFrame0;
 
         for (int delay = 1; delay <= maxDelayFrames; delay++) {
-            int ticks = getSurvivalTicks(pl, p1, p2, isDual, delay, push, targetHorizon, deadline);
-            if (m_budgetHit) break;
+            int ticks = getSurvivalTicks(pl, p1, p2, isDual, delay, push, targetHorizon);
 
             if (isWave) {
                 // In Wave mode, delaying a turn inside a flat corridor naturally adds ~(2 * delay)
@@ -462,13 +416,8 @@ public:
             }
         }
 
-        if (m_budgetHit && bestDelay == 0) {
-            notifyBudgetHit();
-        }
-
         if (bestDelay > 0) {
-            if (m_showSaves && m_popupCooldown <= 0) {
-                m_popupCooldown = 120;
+            if (Mod::get()->getSettingValue<bool>("show-saves")) {
                 Notification::create(
                     "Buffer saved +" + std::to_string(bestDelay) + " ticks",
                     NotificationIcon::None, 0.4f
@@ -487,11 +436,7 @@ public:
         PlayLayer* pl = PlayLayer::get();
         if (!pl || player != pl->m_player1) return;
 
-        if (++m_settingTimer >= 30) {
-            m_settingTimer = 0;
-            refreshSettings();
-        }
-        if (m_popupCooldown > 0) m_popupCooldown--;
+        applyPresetFromSetting();
         if (!m_enabled) return;
 
         if (m_ticksSinceLastInput < 999) {
@@ -670,8 +615,7 @@ class $modify(BufBaseGameLayer, GJBaseGameLayer) {
 
     void collisionCheckObjects(PlayerObject* player, gd::vector<GameObject*>* vec, int objectsCount, float dt) {
         if (s_sim.isSimulating()) {
-            static gd::vector<GameObject*> extra;
-            extra.clear();
+            gd::vector<GameObject*> extra;
             extra.reserve(objectsCount);
             for (int i = 0; i < objectsCount; i++) {
                 GameObject* obj = vec->at(i);
