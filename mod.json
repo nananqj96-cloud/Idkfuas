@@ -29,6 +29,14 @@
       "description": "Also apply the buffer in ship mode (normally ship is skipped). Experimental.",
       "type": "bool",
       "default": false
+    },
+    "sim-budget-ms": {
+      "name": "Sim Budget (ms)",
+      "description": "Max milliseconds one click may spend simulating ahead. Higher = buffer works more often but can lag. If you see 'out of time' popups, raise this. Lower it if the game stutters.",
+      "type": "int",
+      "default": 12,
+      "min": 1,
+      "max": 100
     }
   }
 }
