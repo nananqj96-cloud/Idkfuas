@@ -23,11 +23,6 @@ using namespace geode::prelude;
 constexpr int SPAM_INTERVAL_TICKS = 8;
 constexpr int SPAM_STREAK_REQUIRED = 3;
 
-// Max wall-clock time (ms) a single click may spend on trajectory simulation.
-// Stops lag spikes on slow devices. If the budget runs out, the input is simply
-// passed through unbuffered. Lower = smoother game, weaker buffer on big levels.
-constexpr double SIM_BUDGET_MS = 3.0;
-
 // ============================================================================
 
 class TrajectoryBufferSim {
@@ -65,6 +60,7 @@ private:
     int  m_settingTimer = 0;
     int  m_popupCooldown = 0;
     bool m_budgetHit = false;
+    int  m_simBudgetMs = 12;   // max ms one click may spend simulating (setting: sim-budget-ms)
 
     PlayerObject* createTrajectoryPlayer() {
         PlayLayer* pl = PlayLayer::get();
@@ -148,6 +144,10 @@ public:
     void refreshSettings() {
         m_skipShip = !Mod::get()->getSettingValue<bool>("dont-skip-ship");
         m_showSaves = Mod::get()->getSettingValue<bool>("show-saves");
+        int budget = static_cast<int>(Mod::get()->getSettingValue<int64_t>("sim-budget-ms"));
+        if (budget < 1) budget = 1;
+        if (budget > 100) budget = 100;
+        m_simBudgetMs = budget;
         applyPresetFromSetting();
     }
 
@@ -301,6 +301,16 @@ public:
         return survived;
     }
 
+    void notifyBudgetHit() {
+        if (m_showSaves && m_popupCooldown <= 0) {
+            m_popupCooldown = 120;
+            Notification::create(
+                "Buffer out of time - raise Sim Budget",
+                NotificationIcon::None, 0.6f
+            )->show();
+        }
+    }
+
     bool interceptInput(GJBaseGameLayer* layer, bool push, bool isPlayer1) {
         PlayLayer* pl = PlayLayer::get();
         if (!pl) return true;
@@ -398,13 +408,14 @@ public:
 
         // Time budget for all simulation done for this one click
         const auto deadline = std::chrono::steady_clock::now() +
-            std::chrono::microseconds(static_cast<int64_t>(SIM_BUDGET_MS * 1000.0));
+            std::chrono::milliseconds(m_simBudgetMs);
         m_budgetHit = false;
 
         // 4. Check Frame 0 (immediate input) across the full trajectory horizon
         int ticksFrame0 = getSurvivalTicks(pl, p1, p2, isDual, 0, push, targetHorizon, deadline);
         if (m_budgetHit) {
             // Out of time: don't risk a wrong decision, just pass the input through
+            notifyBudgetHit();
             m_gameHolding = push;
             return true;
         }
@@ -449,6 +460,10 @@ public:
                     bestTicks = ticks;
                 }
             }
+        }
+
+        if (m_budgetHit && bestDelay == 0) {
+            notifyBudgetHit();
         }
 
         if (bestDelay > 0) {
