@@ -16,11 +16,11 @@ private:
     using Clock = std::chrono::steady_clock;
     using TimePoint = Clock::time_point;
 
-    // Three alternating Jump transitions, each no more than 120 ms apart,
-    // switch on correction. A 300 ms pause between transitions switches it off.
+    // Two alternating Jump transitions, no more than 120 ms apart, switch on
+    // correction. A 150 ms pause between transitions switches it off.
     static constexpr auto kRapidInputWindow = std::chrono::milliseconds{120};
-    static constexpr auto kStopTimeout = std::chrono::milliseconds{300};
-    static constexpr int kRapidTransitionsToActivate = 3;
+    static constexpr auto kStopTimeout = std::chrono::milliseconds{150};
+    static constexpr int kRapidTransitionsToActivate = 2;
 
     bool m_active = false;
     bool m_sendingInput = false;
@@ -133,7 +133,7 @@ public:
             return false;
         }
 
-        // Take over at the third fast alternating edge. Start in the pressed
+        // Take over at the second fast alternating edge. Start in the pressed
         // phase; later phases use the user's custom hold/release intervals.
         m_active = true;
         m_autoHolding = true;
