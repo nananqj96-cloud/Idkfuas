@@ -5,30 +5,38 @@
     "android": "2.2081"
   },
   "version": "v1.0.0",
-  "id": "ai.predictivebuffer",
-  "name": "Predictive Input Buffer",
+  "id": "ai.spamcorrecter",
+  "name": "Spam Correcter",
   "developer": "lilWC",
-  "description": "Trajectory-based 1-2 frame press and wave release input buffer.",
+  "description": "Detects fast alternating Jump input, then automates configurable press and release intervals until the player stops alternating.",
   "settings": {
-    "show-saves": {
-      "name": "Show Save Popup",
-      "description": "Shows a small popup each time the buffer delays an input to save you.",
-      "type": "bool",
-      "default": true
-    },
-    "buffer-level": {
-      "name": "Buffer Level (0 = OFF, 1-20)",
-      "description": "How far the buffer may delay an input. 1 = 2 ticks, 4 = 16/8 ticks, 20 = 144/72 ticks. High levels can lag or crash the game.",
+    "hold-interval": {
+      "name": "Hold Interval (ms)",
+      "description": "How many milliseconds the mod keeps Jump pressed during spam correction. Enter any whole number from 1 to 60000.",
       "type": "int",
-      "default": 1,
-      "min": 0,
-      "max": 20
+      "default": 50,
+      "min": 1,
+      "max": 60000,
+      "control": {
+        "slider": false,
+        "arrows": true,
+        "arrow-step": 1,
+        "input": true
+      }
     },
-    "dont-skip-ship": {
-      "name": "Don't Skip Ship",
-      "description": "Also apply the buffer in ship mode (normally ship is skipped). Experimental.",
-      "type": "bool",
-      "default": false
+    "release-interval": {
+      "name": "Release Interval (ms)",
+      "description": "How many milliseconds the mod keeps Jump released during spam correction. Enter any whole number from 1 to 60000.",
+      "type": "int",
+      "default": 50,
+      "min": 1,
+      "max": 60000,
+      "control": {
+        "slider": false,
+        "arrows": true,
+        "arrow-step": 1,
+        "input": true
+      }
     }
   }
 }
